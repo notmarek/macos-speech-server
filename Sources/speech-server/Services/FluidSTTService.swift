@@ -93,7 +93,10 @@ final class FluidSTTService: STTService, @unchecked Sendable {
             let paddedLength = max(segLength, 16_000)
             var slicedSamples = [Float](repeating: 0, count: paddedLength)
             try diskSource.copySamples(into: &slicedSamples, offset: startSample, count: segLength)
-            let result = try await asrManager.transcribe(slicedSamples, source: .system)
+            // FluidAudio 0.15+ requires an explicit TDT decoder state. Use a fresh state per
+            // segment so segments are transcribed independently (matching the prior behavior).
+            var decoderState = try TdtDecoderState()
+            let result = try await asrManager.transcribe(slicedSamples, decoderState: &decoderState)
 
             let segOffset = vadSeg.startTime
             let rawWords = mergeTokensIntoWords(result.tokenTimings ?? [])

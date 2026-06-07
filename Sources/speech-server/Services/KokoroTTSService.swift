@@ -3,11 +3,25 @@ import Foundation
 import Logging
 
 final class KokoroTTSService: TTSService, @unchecked Sendable {
-    let sampleRate: Int = TtsConstants.audioSampleRate
-    private(set) var defaultVoice: String = TtsConstants.recommendedVoice
-    let availableVoices: [String] = TtsConstants.availableVoices.sorted()
+    let sampleRate: Int = KokoroAneConstants.sampleRate
+    private(set) var defaultVoice: String = KokoroAneConstants.defaultVoice
+    let availableVoices: [String] = KokoroTTSService.englishVoices.sorted()
 
-    private var manager: KokoroTtsManager?
+    /// English-variant Kokoro voices from the `FluidInference/kokoro-82m-coreml` voice pack:
+    /// American (`af_`/`am_`) and British (`bf_`/`bm_`). FluidAudio's KokoroAne `.english`
+    /// variant uses an English G2P pipeline, so only these voices are exposed (other-language
+    /// packs need their own G2P and are not supported here). American voices are production
+    /// quality. The Kokoro engine no longer ships an enumerable voice list, so it is pinned here.
+    static let englishVoices: [String] = [
+        "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
+        "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+        "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
+        "am_onyx", "am_puck", "am_santa",
+        "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+        "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    ]
+
+    private var manager: KokoroAneManager?
     private var logger: Logger = {
         var l = Logger(label: "KokoroTTSService")
         l.logLevel = .notice
@@ -15,14 +29,14 @@ final class KokoroTTSService: TTSService, @unchecked Sendable {
     }()
 
     func initialize(settings: KokoroSettings = KokoroSettings()) async throws {
-        let voiceId = settings.defaultVoice ?? TtsConstants.recommendedVoice
-        let m = KokoroTtsManager(defaultVoice: voiceId)
+        let voiceId = settings.defaultVoice ?? KokoroAneConstants.defaultVoice
+        let m = KokoroAneManager(variant: .english, defaultVoice: voiceId)
         try await m.initialize()
         self.manager = m
         self.defaultVoice = voiceId
     }
 
-    // Returns a complete WAV file produced directly by KokoroTtsManager.synthesize().
+    // Returns a complete WAV file produced directly by KokoroAneManager.synthesize().
     func synthesize(text: String, voice: String) async throws -> Data {
         guard let manager = manager else {
             throw KokoroTTSError.notInitialized
@@ -37,8 +51,8 @@ final class KokoroTTSService: TTSService, @unchecked Sendable {
     }
 
     // Yields raw 16-bit little-endian PCM (24 kHz mono, no WAV header) one chunk per
-    // sentence. All Float32 samples for a sentence are collected from KokoroSynthesizer
-    // chunk results, peak-normalised once, and converted to PCM16.
+    // sentence. The Float32 samples for a sentence (KokoroAneSynthesisResult.samples) are
+    // peak-normalised once and converted to PCM16.
     func synthesizeStream(text: String, voice: String) -> AsyncThrowingStream<Data, Error> {
         guard availableVoices.contains(voice) else {
             return AsyncThrowingStream { continuation in
@@ -58,9 +72,8 @@ final class KokoroTTSService: TTSService, @unchecked Sendable {
                     for sentence in sentences {
                         let result = try await manager.synthesizeDetailed(
                             text: sentence, voice: voice)
-                        let allSamples = result.chunks.flatMap { $0.samples }
-                        if !allSamples.isEmpty {
-                            continuation.yield(float32ToPCM16(allSamples))
+                        if !result.samples.isEmpty {
+                            continuation.yield(float32ToPCM16(result.samples))
                         }
                     }
                     continuation.finish()

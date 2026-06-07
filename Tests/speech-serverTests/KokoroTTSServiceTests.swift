@@ -4,7 +4,7 @@ import XCTest
 
 /// Tests for KokoroTTSService.
 ///
-/// These tests exercise the real KokoroTtsManager from FluidAudio.
+/// These tests exercise the real KokoroAneManager from FluidAudio.
 /// Model download is required on first run and cached after that.
 final class KokoroTTSServiceTests: XCTestCase {
     // nonisolated(unsafe): initialization is serialized via DispatchSemaphore in setUp.

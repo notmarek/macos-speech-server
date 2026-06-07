@@ -122,7 +122,7 @@ Three TTS engines are available:
 |--------|----------------|--------|-------------|-----------|-------|
 | FluidAudio PocketTTS | `pocket_tts` | `alba` only | 24 kHz | ~200 MB on first start | Default |
 | macOS AVSpeech | `avspeech` | 150+ system voices | 22050 Hz | None (ships with macOS) | Instant startup |
-| FluidAudio Kokoro | `kokoro` | 50 voices, 8 languages | 24 kHz | ~300 MB on first start | High quality |
+| FluidAudio Kokoro | `kokoro` | 28 English voices (American + British) | 24 kHz | ~300 MB on first start | High quality |
 
 #### `pocket_tts` (default)
 
@@ -152,7 +152,7 @@ The short name (e.g. `Samantha`, `Daniel`, `Karen`) is used in API requests. Voi
 
 #### `kokoro` — FluidAudio Kokoro
 
-Uses [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Kokoro CoreML model. 50 voices across 8 languages (American English, British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese, Mandarin Chinese), synthesised at 24 kHz. Models are downloaded on first start and cached at `~/.cache/fluidaudio/Models/kokoro`.
+Uses [FluidAudio](https://github.com/FluidInference/FluidAudio)'s KokoroAne CoreML model (English variant). 28 English voices — American (`af_*`, `am_*`) and British (`bf_*`, `bm_*`) — synthesised at 24 kHz. American voices are production quality. Models are downloaded on first start and cached at `~/.cache/fluidaudio/Models/kokoro`.
 
 ```yaml
 tts:

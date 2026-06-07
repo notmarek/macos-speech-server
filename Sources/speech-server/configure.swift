@@ -116,8 +116,8 @@ func configure(_ app: Application) async throws {
         }
         let langDesc = settings.language.map { "language=\($0)" } ?? "auto-detect"
         app.logger.info(
-            "Loading ASR models (Nemotron multilingual, \(settings.chunkMs)ms, \(langDesc), "
-                + "first run will download ~minutes)...")
+            "Loading ASR models (Nemotron multilingual, \(settings.chunkMs)ms, \(langDesc), first run will download ~minutes)..."
+        )
         let sttService = NemotronSTTService(language: settings.language)
         try await sttService.initialize(chunkMs: settings.chunkMs)
         app.sttService = sttService

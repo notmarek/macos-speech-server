@@ -7,7 +7,7 @@ Essential knowledge for AI agents working on this codebase.
 A macOS-native HTTP server that exposes OpenAI-compatible speech API endpoints and a Wyoming protocol server for Home Assistant integration, running entirely on-device. Built with Vapor (Swift web framework) and FluidAudio (on-device ASR via Apple's Neural Engine).
 
 - **STT** is fully implemented with three engines: `parakeet` (FluidAudio `AsrManager`, default), `qwen3` (FluidAudio `Qwen3AsrManager`, 30+ langs with language hinting), and `nemotron` (FluidAudio `StreamingNemotronMultilingualAsrManager`, ~40 langs, streaming).
-- **TTS** is fully implemented with three engines: `pocket_tts` (FluidAudio PocketTTS, `alba` only), `avspeech` (macOS built-in, 150+ voices), and `kokoro` (FluidAudio Kokoro, 50 voices across 8 languages).
+- **TTS** is fully implemented with three engines: `pocket_tts` (FluidAudio PocketTTS, `alba` only), `avspeech` (macOS built-in, 150+ voices), and `kokoro` (FluidAudio KokoroAne, English variant — 28 American/British English voices, 24 kHz).
 
 ## Tech stack
 
@@ -242,17 +242,17 @@ delivers zero samples (e.g. empty utterance after preprocessing).
 
 ### KokoroTTSService
 
-`KokoroTTSService` wraps FluidAudio's `KokoroTtsManager` (50 voices, 8 languages, 24 kHz):
+`KokoroTTSService` wraps FluidAudio's `KokoroAneManager` (KokoroAne, English variant, 24 kHz):
 
-1. On init (`initialize(settings:)`): creates `KokoroTtsManager(defaultVoice:)`, calls `manager.initialize()` (downloads Kokoro CoreML models on first run, cached at `~/.cache/fluidaudio/Models/kokoro`), sets `defaultVoice` from settings or `TtsConstants.recommendedVoice` (`"af_heart"`).
+1. On init (`initialize(settings:)`): creates `KokoroAneManager(variant: .english, defaultVoice:)`, calls `manager.initialize()` (downloads KokoroAne CoreML models + English G2P assets on first run, cached at `~/.cache/fluidaudio/Models/kokoro`), sets `defaultVoice` from settings or `KokoroAneConstants.defaultVoice` (`"af_heart"`).
 2. On synthesize (`synthesize`): validates voice against `availableVoices`, calls `manager.synthesize()` which returns WAV data directly (no manual PCM conversion needed).
-3. On streaming (`synthesizeStream`): validates voice first (returns stream that immediately throws on invalid voice), splits text into sentences with `detectSentences()`, calls `manager.synthesizeDetailed()` per sentence, collects all samples from `result.chunks.flatMap { $0.samples }`, converts via `float32ToPCM16()`, yields one PCM chunk per sentence.
+3. On streaming (`synthesizeStream`): validates voice first (returns stream that immediately throws on invalid voice), splits text into sentences with `detectSentences()`, calls `manager.synthesizeDetailed()` per sentence, converts `result.samples` (`[Float]`) via `float32ToPCM16()`, yields one PCM chunk per sentence.
 4. Must call `initialize()` before first use — will throw `KokoroTTSError.notInitialized` otherwise.
-5. `@unchecked Sendable` because `KokoroTtsManager` is not `Sendable`. All stored properties besides the manager are immutable.
+5. `@unchecked Sendable` because `KokoroAneManager` (an actor) is held as a stored property. All other stored properties are immutable.
 
-**Voice list**: `TtsConstants.availableVoices` (50 voices, sorted alphabetically in `availableVoices` property). American English voices (`af_*`, `am_*`) are production quality; other languages are experimental.
+**Voice list**: FluidAudio's KokoroAne no longer ships an enumerable voice list, so the 28 English-variant voices are pinned in `KokoroTTSService.englishVoices` (American `af_*`/`am_*`, British `bf_*`/`bm_*`), exposed sorted via `availableVoices`. The `.english` variant uses an English G2P pipeline, so other-language voice packs (Spanish/French/Japanese/Mandarin/…) are intentionally not exposed — they need their own G2P. American voices are production quality. Exposing the Mandarin variant would mean adding a `variant` config key and a separate voice set.
 
-**`manager.synthesize()` returns WAV directly**: unlike PocketTTS which returns raw samples via `synthesizeDetailed().samples`, `KokoroTtsManager.synthesize()` returns a complete WAV `Data`. For streaming, `synthesizeDetailed()` returns a `KokoroSynthesizer.SynthesisResult` with `chunks: [ChunkInfo]`, each with `samples: [Float]`.
+**`manager.synthesize()` returns WAV directly**: unlike PocketTTS which returns raw samples via `synthesizeDetailed().samples`, `KokoroAneManager.synthesize()` returns a complete WAV `Data`. For streaming, `synthesizeDetailed()` returns a `KokoroAneSynthesisResult` whose `samples: [Float]` holds the whole sentence (no per-chunk array).
 
 **Errors**: `KokoroTTSError.notInitialized` and `KokoroTTSError.voiceNotFound(String)`.
 
