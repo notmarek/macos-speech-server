@@ -20,7 +20,7 @@ servers:
     port: 10300           # TCP port for Wyoming protocol (Home Assistant). 0 = disabled; override with WYOMING_PORT env var.
 
 stt:
-  engine: parakeet      # Speech-to-text engine: parakeet | qwen3
+  engine: parakeet      # Speech-to-text engine: parakeet | qwen3 | nemotron
   parakeet:
     model_version: v3   # v3 = Parakeet TDT 0.6B v3, multilingual (25 langs, default)
                         # v2 = Parakeet TDT 0.6B v2, English-only (higher recall)
@@ -31,6 +31,13 @@ stt:
   # qwen3:
   #   variant: int8     # int8 = quantized ~900 MB (default); f32 = full precision ~1.75 GB
   #   language: en      # ISO 639-1 code (e.g. en, fr, de); omit for auto-detect
+
+  # Nemotron ASR settings (only used when engine: nemotron)
+  # Uses FluidAudio's StreamingNemotronMultilingualAsrManager — multilingual streaming
+  # ASR (~40 languages). Requires macOS 15+ and Apple Silicon.
+  # nemotron:
+  #   language: en-US   # FLEURS-style code (e.g. en-US, fr-FR, zh-CN); omit for auto-detect
+  #   chunk_ms: 1120    # Latency/throughput tier: 560 | 1120 (default) | 2240 | 4480
 
 tts:
   engine: pocket_tts    # Text-to-speech engine: pocket_tts | avspeech | kokoro

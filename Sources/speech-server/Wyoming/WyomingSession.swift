@@ -37,6 +37,20 @@ struct STTInfo: Sendable {
             "da", "fi", "pl", "cs", "fil", "fa", "el", "hu", "mk", "ro",
         ]
     )
+
+    static let nemotron = STTInfo(
+        modelName: "nemotron-streaming-multilingual",
+        modelDescription: "Nemotron multilingual streaming ASR via FluidAudio",
+        languages: [
+            "en", "es", "de", "fr", "it", "pt", "nl", "sv", "da", "no",
+            "nb", "nn", "fi", "pl", "cs", "sk", "sl", "hr", "hu", "ro",
+            "bg", "el", "uk", "ru", "lt", "lv", "et", "ar", "fa", "he",
+            "hi", "bn", "gu", "kn", "ml", "mr", "or", "ta", "te", "ur",
+            "ne", "si", "th", "vi", "id", "ms", "ja", "ko", "zh", "tr",
+            "az", "ka", "hy", "ky", "uz", "tg", "km", "sw", "yo", "ha",
+            "ig", "zu", "af", "am", "so",
+        ]
+    )
 }
 
 actor WyomingSession {

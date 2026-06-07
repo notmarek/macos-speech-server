@@ -102,6 +102,26 @@ func configure(_ app: Application) async throws {
         try await sttService.initialize(variant: variant)
         app.sttService = sttService
         app.logger.info("Qwen3 ASR models loaded. Server ready.")
+    case .nemotron:
+        guard #available(macOS 15, *) else {
+            throw Abort(.internalServerError, reason: "Nemotron ASR requires macOS 15 or later.")
+        }
+        let settings = config.stt.nemotron ?? NemotronSTTSettings()
+        let validTiers = [560, 1120, 2240, 4480]
+        guard validTiers.contains(settings.chunkMs) else {
+            throw Abort(
+                .internalServerError,
+                reason:
+                    "Unknown Nemotron chunk_ms '\(settings.chunkMs)'; valid values are 560, 1120, 2240, 4480.")
+        }
+        let langDesc = settings.language.map { "language=\($0)" } ?? "auto-detect"
+        app.logger.info(
+            "Loading ASR models (Nemotron multilingual, \(settings.chunkMs)ms, \(langDesc), "
+                + "first run will download ~minutes)...")
+        let sttService = NemotronSTTService(language: settings.language)
+        try await sttService.initialize(chunkMs: settings.chunkMs)
+        app.sttService = sttService
+        app.logger.info("Nemotron ASR models loaded. Server ready.")
     }
 
     // Wyoming TCP server (default port 10300; set wyoming.port: 0 or WYOMING_PORT=0 to disable)
@@ -119,7 +139,12 @@ func configure(_ app: Application) async throws {
     else {
         wyomingPort = config.servers.wyoming.port
     }
-    let sttInfo: STTInfo = config.stt.engine == .qwen3 ? .qwen3 : .parakeet
+    let sttInfo: STTInfo =
+        switch config.stt.engine {
+        case .parakeet: .parakeet
+        case .qwen3: .qwen3
+        case .nemotron: .nemotron
+        }
     if wyomingPort > 0 && app.environment != .testing {
         let wyomingServer = WyomingServer(
             host: wyomingHost,

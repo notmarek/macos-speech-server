@@ -6,7 +6,7 @@ Essential knowledge for AI agents working on this codebase.
 
 A macOS-native HTTP server that exposes OpenAI-compatible speech API endpoints and a Wyoming protocol server for Home Assistant integration, running entirely on-device. Built with Vapor (Swift web framework) and FluidAudio (on-device ASR via Apple's Neural Engine).
 
-- **STT** is fully implemented using FluidAudio's `AsrManager`.
+- **STT** is fully implemented with three engines: `parakeet` (FluidAudio `AsrManager`, default), `qwen3` (FluidAudio `Qwen3AsrManager`, 30+ langs with language hinting), and `nemotron` (FluidAudio `StreamingNemotronMultilingualAsrManager`, ~40 langs, streaming).
 - **TTS** is fully implemented with three engines: `pocket_tts` (FluidAudio PocketTTS, `alba` only), `avspeech` (macOS built-in, 150+ voices), and `kokoro` (FluidAudio Kokoro, 50 voices across 8 languages).
 
 ## Tech stack
@@ -14,7 +14,7 @@ A macOS-native HTTP server that exposes OpenAI-compatible speech API endpoints a
 | Component | Library | Version constraint |
 |-----------|---------|-------------------|
 | Web framework | [Vapor](https://github.com/vapor/vapor) | 4.76.0+ |
-| Speech-to-text / TTS | [FluidAudio](https://github.com/FluidInference/FluidAudio) | 0.12.4+ |
+| Speech-to-text / TTS | [FluidAudio](https://github.com/FluidInference/FluidAudio) | 0.15.2+ |
 | Multipart parsing | [multipart-kit](https://github.com/vapor/multipart-kit) | 4.0.0+ |
 | YAML parsing | [Yams](https://github.com/jpsim/Yams) | 6.0.1+ |
 | TCP networking | [swift-nio](https://github.com/apple/swift-nio) | 2.65.0+ |
@@ -63,7 +63,7 @@ ServerConfig
   ├─ servers: ServersConfig
   │   ├─ http: HTTPConfig          (host, port, uploadLimitMB)
   │   └─ wyoming: WyomingConfig    (host, port)
-  ├─ stt: STTConfig                (engine, parakeet/qwen3 settings)
+  ├─ stt: STTConfig                (engine, parakeet/qwen3/nemotron settings)
   └─ tts: TTSConfig                (engine, pocket_tts/avspeech/kokoro settings)
 ```
 
@@ -154,6 +154,23 @@ Use `source: .system` for file/API transcription, `source: .microphone` for live
 **Model variants**: `Qwen3AsrVariant.int8` (~900 MB, default) and `.f32` (~1.75 GB). Configured via `variant` in YAML.
 
 **Errors**: `Qwen3STTError.notInitialized`, `Qwen3STTError.audioConversionFailed(Error)`, `Qwen3STTError.audioTooShort`, `Qwen3STTError.unsupportedPlatform`.
+
+### NemotronSTTService
+
+`NemotronSTTService` wraps FluidAudio's `StreamingNemotronMultilingualAsrManager` (NVIDIA Nemotron multilingual streaming ASR, ~40 languages):
+
+1. On init: takes optional `language` hint (FLEURS-style code, e.g. `"en-US"`, `"fr-FR"`, `"zh-CN"`).
+2. On initialize: downloads the `<lang>/<chunkMs>ms` variant via `StreamingNemotronMultilingualAsrManager.downloadVariant(languageCode:chunkMs:)` (cached at `~/Library/Application Support/FluidAudio/Models/`), creates the manager, calls `manager.loadModels(from:)`. `downloadVariant` auto-routes Latin-script languages (en/es/fr/it/pt/de) to a vocab-pruned `latin` build and everything else (incl. `"auto"`) to the full-vocab `multilingual` build.
+3. On transcribe: converts audio to 16 kHz mono via `DiskBackedAudioSampleSource`, calls `await manager.reset()`, applies the language hint via `setLanguage`, then **feeds the whole file in 30-second blocks** through `manager.process(samples:)` and retrieves the transcript with `manager.finish()`. **No separate VAD pass** — the streaming manager gates speech internally.
+4. Returns `TranscriptionResult` with a single segment spanning the audio and **no word-level timestamps** (Nemotron returns plain text); empty text yields no segments.
+5. Must call `initialize()` before first use — will throw `NemotronSTTError.notInitialized` otherwise.
+6. `@available(macOS 15, *)` and Apple Silicon only (the int8 encoder is ANE-targeted).
+
+**Why an `actor` (not `final class @unchecked Sendable` like the other STT services)**: the underlying manager is a *stateful* streaming recognizer — a single `transcribe` brackets `reset()` → many `process()` → `finish()`, which is not atomic. Making the service an `actor` serializes concurrent `transcribe(audioURL:)` calls so two requests can't interleave and corrupt the manager's encoder/decoder state.
+
+**`chunk_ms` tiers**: valid values are `560`, `1120` (default), `2240`, `4480` — validated in `configure.swift` (invalid values cause a startup error). Smaller = lower latency, larger = higher throughput (WER-neutral). The value maps directly to the HuggingFace repo subfolder (`<lang>/<chunkMs>ms`).
+
+**Errors**: `NemotronSTTError.notInitialized`, `NemotronSTTError.audioConversionFailed(Error)`, `NemotronSTTError.audioTooShort`, `NemotronSTTError.unsupportedPlatform`.
 
 ### FluidTTSService
 
@@ -299,7 +316,7 @@ recording ──audio-stop──→ [call STTService.transcribe, send transcript
 any state ──describe──→ [send info with both asr + tts capabilities] (state unchanged)
 ```
 
-The `info` response advertises both `asr` and `tts` arrays so Home Assistant knows this single port handles both services. The TTS program includes `supports_synthesize_streaming: true` to advertise HA 2025.07+ streaming support. ASR model name and language list are driven by `STTInfo` (passed through `WyomingServer` → `WyomingSession`), with static presets `.parakeet` and `.qwen3`.
+The `info` response advertises both `asr` and `tts` arrays so Home Assistant knows this single port handles both services. The TTS program includes `supports_synthesize_streaming: true` to advertise HA 2025.07+ streaming support. ASR model name and language list are driven by `STTInfo` (passed through `WyomingServer` → `WyomingSession`), with static presets `.parakeet`, `.qwen3`, and `.nemotron`. The preset is selected in `configure.swift` via a `switch` over `config.stt.engine`.
 
 **Streaming TTS**: `handle(event:)` returns `AsyncStream<Data>` (non-async). For `synthesize`, the stream yields `audio-start` + each `audio-chunk` + `audio-stop` incrementally as TTS chunks arrive — `audio-start` is withheld until the first chunk so a completely failed synthesis sends nothing. State mutations (e.g. `state = .awaitingAudio`) happen synchronously before the stream is returned, so callers can immediately make the next `handle` call without draining the stream first. All other event types pre-fill the stream synchronously and finish immediately.
 
@@ -332,6 +349,7 @@ Both `http.host` and `wyoming.host` are independently configurable — they do n
 | `KokoroConfigTests.swift` | YAML parsing for `kokoro` engine and `KokoroSettings` | No |
 | `KokoroTTSServiceTests.swift` | Real `KokoroTTSService` (Kokoro CoreML models) | Yes |
 | `Qwen3ConfigTests.swift` | YAML parsing for `qwen3` engine and `Qwen3STTSettings` | No |
+| `NemotronConfigTests.swift` | YAML parsing for `nemotron` engine and `NemotronSTTSettings` | No |
 | `Helpers/MockServices.swift` | `MockTTSService` + `MockSTTService` for session tests | No |
 
 ### Error handling
@@ -416,6 +434,7 @@ swift test --filter ServerConfig  # run a specific test class
 | `KokoroConfigTests.swift` | Unit | YAML parsing for `kokoro` engine and `KokoroSettings` — no models needed |
 | `KokoroTTSServiceTests.swift` | Integration | Real `KokoroTTSService` with Kokoro CoreML models |
 | `Qwen3ConfigTests.swift` | Unit | YAML parsing for `qwen3` engine and `Qwen3STTSettings` — no models needed |
+| `NemotronConfigTests.swift` | Unit | YAML parsing for `nemotron` engine and `NemotronSTTSettings` — no models needed |
 | `Helpers/MockServices.swift` | Helper | MockTTSService + MockSTTService |
 
 **First run**: integration tests load real FluidAudio models (STT + TTS). Model download takes several minutes; subsequent runs use the on-disk cache and start in seconds. The shared app singleton (`_appTask` in `TestApp.swift`) ensures models are initialized once per `swift test` invocation.

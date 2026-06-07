@@ -43,12 +43,15 @@ servers:
     port: 10300           # TCP port for Wyoming protocol (Home Assistant). 0 = disabled.
 
 stt:
-  engine: parakeet      # parakeet (default) | qwen3
+  engine: parakeet      # parakeet (default) | qwen3 | nemotron
   parakeet:
     model_version: v3   # v3 = multilingual (25 langs, default), v2 = English-only
   # qwen3:              # Qwen3 ASR — encoder-decoder model with language hinting (macOS 15+)
   #   variant: int8     # int8 (default, ~900 MB) | f32 (~1.75 GB)
   #   language: en      # ISO 639-1 code; omit for auto-detect
+  # nemotron:           # Nemotron multilingual streaming ASR (~40 langs, macOS 15+, Apple Silicon)
+  #   language: en-US   # FLEURS-style code (en-US, fr-FR, …); omit for auto-detect
+  #   chunk_ms: 1120    # 560 | 1120 (default) | 2240 | 4480
 
 tts:
   engine: pocket_tts    # pocket_tts (default) | avspeech | kokoro
@@ -67,12 +70,13 @@ All fields are optional — omitted fields use the defaults shown above.
 
 ### STT engines
 
-Two STT engines are available:
+Three STT engines are available:
 
 | Engine | `engine:` value | Languages | Downloads | Notes |
 |--------|----------------|-----------|-----------|-------|
 | Parakeet TDT | `parakeet` | 25 (v3) or English-only (v2) | ~500 MB on first start | Default, CTC/TDT model, word-level timestamps |
 | Qwen3 ASR | `qwen3` | 30+ with explicit language hinting | ~900 MB (int8) or ~1.75 GB (f32) | Encoder-decoder, macOS 15+ required |
+| Nemotron | `nemotron` | ~40 with explicit language hinting | ~600 MB on first start | Multilingual streaming, macOS 15+ and Apple Silicon required |
 
 #### `parakeet` (default)
 
@@ -93,6 +97,22 @@ stt:
 Supported languages: zh, en, yue, ar, de, fr, es, pt, id, it, ko, ru, th, vi, ja, tr, hi, ms, nl, sv, da, fi, pl, cs, fil, fa, el, hu, mk, ro.
 
 **Note:** Qwen3 does not provide word-level timestamps. The `verbose_json` response will include segment-level timing (from VAD) but the `words` array will be empty.
+
+#### `nemotron` — multilingual streaming ASR
+
+Uses FluidAudio's `StreamingNemotronMultilingualAsrManager` (NVIDIA Nemotron, ~40 languages). Like Qwen3 it accepts an explicit `language` hint (FLEURS-style code, e.g. `en-US`, `fr-FR`, `zh-CN`); omit it for auto-detection. The model is a streaming recognizer, so the server feeds each file through it and collects the final transcript. Requires macOS 15+ and Apple Silicon.
+
+```yaml
+stt:
+  engine: nemotron
+  nemotron:
+    language: en-US   # FLEURS-style code — set this for best results with a known language
+    chunk_ms: 1120    # latency/throughput tier: 560 | 1120 (default) | 2240 | 4480
+```
+
+`chunk_ms` selects the model build: smaller chunks lower latency, larger chunks raise throughput (WER-neutral). Supported languages include en, es, de, fr, it, pt, nl, sv, da, no, fi, pl, cs, ru, uk, ar, fa, he, hi, bn, ta, te, th, vi, id, ms, ja, ko, zh, tr, and more (~40 total).
+
+**Note:** Nemotron does not provide word-level timestamps. The `verbose_json` response includes a single segment covering the audio and the `words` array will be empty.
 
 ### TTS engines
 
@@ -470,6 +490,7 @@ Sources/speech-server/
     STTService.swift               # STT protocol + DI
     FluidSTTService.swift          # FluidAudio ASR implementation (parakeet engine)
     Qwen3STTService.swift          # FluidAudio Qwen3 ASR implementation (qwen3 engine)
+    NemotronSTTService.swift       # FluidAudio Nemotron multilingual streaming ASR (nemotron engine)
     AudioFormatDetection.swift     # Magic-byte audio format detection
     TTSService.swift               # TTS protocol + DI
     FluidTTSService.swift          # FluidAudio PocketTTS implementation (pocket_tts engine)

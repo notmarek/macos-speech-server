@@ -116,11 +116,13 @@ struct STTConfig: Codable, Sendable {
     var engine: STTEngine
     var parakeet: ParakeetSettings?
     var qwen3: Qwen3STTSettings?
+    var nemotron: NemotronSTTSettings?
 
     init() {
         engine = .parakeet
         parakeet = nil
         qwen3 = nil
+        nemotron = nil
     }
 
     init(from decoder: any Decoder) throws {
@@ -128,18 +130,21 @@ struct STTConfig: Codable, Sendable {
         engine = try c.decodeIfPresent(STTEngine.self, forKey: .engine) ?? .parakeet
         parakeet = try c.decodeIfPresent(ParakeetSettings.self, forKey: .parakeet)
         qwen3 = try c.decodeIfPresent(Qwen3STTSettings.self, forKey: .qwen3)
+        nemotron = try c.decodeIfPresent(NemotronSTTSettings.self, forKey: .nemotron)
     }
 
     enum CodingKeys: String, CodingKey {
         case engine
         case parakeet = "parakeet"
         case qwen3 = "qwen3"
+        case nemotron = "nemotron"
     }
 }
 
 enum STTEngine: String, Codable, Sendable {
     case parakeet = "parakeet"
     case qwen3 = "qwen3"
+    case nemotron = "nemotron"
 }
 
 struct ParakeetSettings: Codable, Sendable {
@@ -180,6 +185,31 @@ struct Qwen3STTSettings: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case variant
         case language
+    }
+}
+
+struct NemotronSTTSettings: Codable, Sendable {
+    /// Language hint (FLEURS-style code, e.g. "en-US", "fr-FR", "zh-CN").
+    /// Nil = "auto" (the model auto-detects and routes to the full-vocab multilingual build).
+    var language: String?
+    /// Chunk-size / latency tier in milliseconds. Valid: 560, 1120 (default), 2240, 4480.
+    /// Larger = higher throughput, smaller = lower latency.
+    var chunkMs: Int
+
+    init() {
+        language = nil
+        chunkMs = 1120
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        language = try c.decodeIfPresent(String.self, forKey: .language)
+        chunkMs = try c.decodeIfPresent(Int.self, forKey: .chunkMs) ?? 1120
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case language
+        case chunkMs = "chunk_ms"
     }
 }
 
